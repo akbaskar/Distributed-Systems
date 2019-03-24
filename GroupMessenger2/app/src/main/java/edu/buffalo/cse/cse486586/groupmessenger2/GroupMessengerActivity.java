@@ -16,6 +16,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import com.android.internal.util.Predicate;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -26,11 +28,14 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.HashSet;
 
 /**
  * GroupMessengerActivity is the main Activity for the assignment.
@@ -46,11 +51,16 @@ public class GroupMessengerActivity extends Activity {
     static final String REMOTE_PORT3 = "11120";
     static final String REMOTE_PORT4 = "11124";
     static final int SERVER_PORT = 10000;
-    static final String[] remotePort = {REMOTE_PORT0, REMOTE_PORT1, REMOTE_PORT2, REMOTE_PORT3, REMOTE_PORT4};
+    static final String[] remotePortOriginal = {REMOTE_PORT0, REMOTE_PORT1, REMOTE_PORT2, REMOTE_PORT3, REMOTE_PORT4};
 //    public int msgSeq = 0;
     public float msgSeq = 0;
     public int msgCounter = 0;
+    public String[] remotePort = {REMOTE_PORT0, REMOTE_PORT1, REMOTE_PORT2, REMOTE_PORT3, REMOTE_PORT4};
     //public int msgSentCount = 0;
+
+    public boolean portMissingFound = false;
+    public String missingPort;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -116,6 +126,8 @@ public class GroupMessengerActivity extends Activity {
 
         public PriorityQueue<MessageClass> pQueue = new PriorityQueue<MessageClass>(50, new MsgComparator());
         public List<MessageClass> arrayList = new ArrayList<MessageClass>();
+
+
 
         private Uri buildUri(String scheme, String authority) {
             Uri.Builder uriBuilder = new Uri.Builder();
@@ -193,10 +205,27 @@ public class GroupMessengerActivity extends Activity {
                                 break;
                             }
                         }
+
+                        if (!portMissingFound) {
+                            missingPort = findMissingPort();
+                        }
+
+                        if(!missingPort.equals("a")) {
+                            Iterator<MessageClass> iter = arrayList.iterator();
+                            while (iter.hasNext()) {
+                                temp = iter.next();
+                                if (temp.id.substring(temp.id.length() - 5).equals(missingPort) && temp.deliverable == false)
+                                    iter.remove();
+                            }
+                        }
+
+
+//                        Log.i(TAG, "Missing port: " + missingPort);
                         Collections.sort(arrayList,MessageClass.mComparator);
                         for (int i = 0; i<arrayList.size();i++){
                             Log.v(TAG, "ARRAYLIST: " + i + " " + arrayList.get(i).toString());
                         }
+
 
                         if (arrayList.get(0).deliverable != false){
                             for(int i =0; i < arrayList.size(); i++) {
@@ -264,6 +293,23 @@ public class GroupMessengerActivity extends Activity {
             }
         }
 
+        public String findMissingPort(){
+            for (String original : remotePortOriginal){
+                boolean found = false;
+                for(String modified: remotePort){
+                    if (original.equals(modified)){
+                        found = true;
+                        break;
+                    }
+                }
+                if(!found) {
+                    portMissingFound = true;
+                    return original;
+                }
+            }
+            return "a";
+        }
+
         protected void onProgressUpdate(String... strings) {
             /*
              * The following code displays what is received in doInBackground().
@@ -319,13 +365,14 @@ public class GroupMessengerActivity extends Activity {
             Log.i(TAG, "CLIENT: Client's Port number: " + msgs[1]);
             Log.i(TAG, "CLIENT: MSG sequence: " + msgSeq);
 
-            String msgId = Float.toString(msgSeq) + msgs[1] ;
+            String msgId = Float.toString(msgSeq) + msgs[1];
 //            msgSeq ++;
 
             Log.i(TAG, "CLIENT: Sending MSG ID " + msgId + " MSG: " + msgs[0] + " Flag: " + "msg");
 
-            try {
-                for (int i = 0; i < remotePort.length; i++) {
+
+            for (int i = 0; i < remotePort.length; i++) {
+                try {
                     Log.i(TAG, "CLIENT: Iteration number: " + remotePort[i]);
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             Integer.parseInt(remotePort[i]));
@@ -347,12 +394,12 @@ public class GroupMessengerActivity extends Activity {
                     String recievedProposal = in.readUTF();
                     Log.i(TAG, "CLIENT: Response received: msg id: " + recievedMsgId + "Proposed Seq No: " + recievedProposal);
 
-                    if (recievedMsgId.equals(msgId)){
-                        Log.i(TAG, "CLIENT: Proposal received from server: "+ recievedProposal);
+                    if (recievedMsgId.equals(msgId)) {
+                        Log.i(TAG, "CLIENT: Proposal received from server: " + recievedProposal);
 //                        int proposedNum  = Integer.parseInt(recievedProposal);
-                        float proposedNum  = Float.parseFloat(recievedProposal);
+                        float proposedNum = Float.parseFloat(recievedProposal);
                         proposedList.add(proposedNum);
-                        if (proposedNum != -1){
+                        if (proposedNum != -1) {
 //                        Log.i(TAG, "inside if loop " );
                             in.close();
                             out.close();
@@ -366,14 +413,19 @@ public class GroupMessengerActivity extends Activity {
 
 //                    if (ackObj.proposedNum != -1 ) {
 
-                }
-            } catch (UnknownHostException e) {
-                Log.e(TAG, "ClientTask UnknownHostException");
-            } catch (IOException e) {
-                Log.e(TAG, "ClientTask socket IOException:"+ e.toString());
-            } //catch (ClassNotFoundException e){
+
+                } catch (UnknownHostException e) {
+                    Log.e(TAG, "ClientTask UnknownHostException");
+                } catch (IOException e) {
+                    Log.e(TAG, "ClientTask socket IOException with out handling: " + e.toString());
+                    Log.i(TAG, "THIS IS THE PORT THAT CAUSED EXCEPTION: " + remotePort[i]);
+                    remotePort = removeFromArray(remotePort,i);
+                    Log.i(TAG, "THIS IS THE removed array " + Arrays.toString(remotePort));
+                    i = i-1;
+                } //catch (ClassNotFoundException e){
                 //Log.e(TAG, "Class Not found exception");
-            //}
+                //}
+            }
 
             Log.i(TAG,"CLIENT: List of all proposed Seq number: " + proposedList);
             Float max = Collections.max(proposedList);
@@ -383,8 +435,9 @@ public class GroupMessengerActivity extends Activity {
 //            sendMax.id = msgId;
 //            sendMax.proposedNum = max;
 
-            try {
-                for (int i = 0; i < remotePort.length; i++) {
+
+            for (int i = 0; i < remotePort.length; i++) {
+                try {
                     Log.i(TAG, "CLIENT: Iteration number for sending finalized seqNo: " + remotePort[i]);
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             Integer.parseInt(remotePort[i]));
@@ -407,12 +460,24 @@ public class GroupMessengerActivity extends Activity {
                         out.close();
                         socket.close();
                     }
+                } catch (UnknownHostException e) {
+                    Log.e(TAG, "ClientTask UnknownHostException");
+                } catch (IOException e) {
+                    Log.e(TAG, "ClientTask socket IOException:"+ e.toString());
+                    Log.i(TAG, "THIS IS THE PORT THAT CAUSED EXCEPTION: " + remotePort[i]);
+//                    String[] anotherArray = new String[remotePort.length - 1];
+//                    for(int idx = 0, j =0 ; idx < remotePort.length -1; idx++) {
+//                        if (idx == i) continue;
+//                        else anotherArray[j++] = remotePort[idx];
+//                    }
+//                    remotePort = anotherArray;
+                    remotePort = removeFromArray(remotePort,i);
+                    i = i-1;
+                    Log.i(TAG, "THIS IS THE removed array " + Arrays.toString(remotePort));
+
                 }
-            } catch (UnknownHostException e) {
-                Log.e(TAG, "ClientTask UnknownHostException");
-            } catch (IOException e) {
-                Log.e(TAG, "ClientTask socket IOException:"+ e.toString());
             }
+
 
 //            try {
 //                for (int i = 0; i < remotePort.length; i++) {
@@ -451,6 +516,20 @@ public class GroupMessengerActivity extends Activity {
 //            }
 
             return null;
+        }
+
+        public String[] removeFromArray (String[] input, int idx)
+        {
+//            if (input == null || idx < 0|| idx >= input.length) {
+//                return input;
+//            }
+            String[] anotherArray = new String[input.length - 1];
+            for (int i = 0, k = 0; i < input.length; i++) {
+                if (i == idx) continue;
+                anotherArray[k] = input[i];
+                k++;
+            }
+            return anotherArray;
         }
     }
 }
